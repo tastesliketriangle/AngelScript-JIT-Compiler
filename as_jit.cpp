@@ -1707,7 +1707,7 @@ int asCJITCompiler::CompileFunction(asIScriptFunction *function, asJITFunction *
 			break;
 		//case asBC_PshRPtr: //All pushes are handled above, near asBC_PshC4
 		/* deprecated with Angelscript 2.32 
-        case asBC_STR:
+		case asBC_STR:
 			{
 				const asCString &str = ((asCScriptEngine*)function->GetEngine())->GetConstantString(asBC_WORDARG0(pOp));
 				esi -= sizeof(void*) + sizeof(asDWORD);
@@ -1848,12 +1848,16 @@ int asCJITCompiler::CompileFunction(asIScriptFunction *function, asJITFunction *
 				auto p = cpu.prep_long_jump(Zero);
 
 				if(beh->release) {
-					unsigned callFlags = SC_ValidObj | SC_NoReturn | SC_Simple;
-					if((flags & JIT_FAST_REFCOUNT) != 0)
-						callFlags |= SC_NoSuspend | SC_Safe;
-
 					asCScriptFunction* func = (asCScriptFunction*)function->GetEngine()->GetFunctionById(beh->release);
-					sysCall.callSystemFunction(func, &arg1, callFlags);
+					if((flags & JIT_FAST_REFCOUNT) != 0) {
+						unsigned callFlags = SC_ValidObj | SC_NoReturn | SC_Simple;
+						callFlags |= SC_NoSuspend | SC_Safe;
+						sysCall.callSystemFunction(func, &arg1, callFlags);
+					} else {
+						cpu.call_stdcall((void*)engineCallMethod, "prp",
+							(asCScriptEngine*)function->GetEngine(),
+							&arg1, func);
+					}
 				}
 				else if(beh->destruct) {
 					//Copy over registers to the vm in case the called functions observe the call stack
@@ -1972,35 +1976,47 @@ int asCJITCompiler::CompileFunction(asIScriptFunction *function, asJITFunction *
 				arg1 = as<void*>(*esi);
 				as<void*>(*esp + local::object1) = arg1;
 
-				unsigned callFlags = SC_ValidObj | SC_NoReturn | SC_Simple;
-				if((flags & JIT_FAST_REFCOUNT) != 0)
-					callFlags |= SC_NoSuspend | SC_Safe;
-
 				//Add reference to object 1, if not null
 				arg1 &= arg1;
-                if (beh->addref)
-                {
-                    auto prev = cpu.prep_long_jump(Zero);
-                    {
-                        asCScriptFunction* func = (asCScriptFunction*)function->GetEngine()->GetFunctionById(beh->addref);
-                        sysCall.callSystemFunction(func, &arg1, callFlags);
-                    }
-                    cpu.end_long_jump(prev);
-                }
+				if (beh->addref)
+				{
+					auto prev = cpu.prep_long_jump(Zero);
+					{
+						asCScriptFunction* func = (asCScriptFunction*)function->GetEngine()->GetFunctionById(beh->addref);
+						if((flags & JIT_FAST_REFCOUNT) != 0) {
+							unsigned callFlags = SC_ValidObj | SC_NoReturn | SC_Simple;
+							callFlags |= SC_NoSuspend | SC_Safe;
+							sysCall.callSystemFunction(func, &arg1, callFlags);
+						} else {
+							cpu.call_stdcall((void*)engineCallMethod, "prp",
+								(asCScriptEngine*)function->GetEngine(),
+								&arg1, func);
+						}
+					}
+					cpu.end_long_jump(prev);
+				}
 
 				//Release reference from object 2, if not null
 				arg1 = as<void*>(*esp+local::object2);
 				arg1 = as<void*>(*arg1);
 				arg1 &= arg1;
-                if (beh->release)
-                {
-                    auto dest = cpu.prep_long_jump(Zero);
-                    {
-                        asCScriptFunction* func = (asCScriptFunction*)function->GetEngine()->GetFunctionById(beh->release);
-                        sysCall.callSystemFunction(func, &arg1, callFlags);
-                    }
-                    cpu.end_long_jump(dest);
-                }
+				if (beh->release)
+				{
+					auto dest = cpu.prep_long_jump(Zero);
+					{
+						asCScriptFunction* func = (asCScriptFunction*)function->GetEngine()->GetFunctionById(beh->release);
+						if((flags & JIT_FAST_REFCOUNT) != 0) {
+							unsigned callFlags = SC_ValidObj | SC_NoReturn | SC_Simple;
+							callFlags |= SC_NoSuspend | SC_Safe;
+							sysCall.callSystemFunction(func, &arg1, callFlags);
+						} else {
+							cpu.call_stdcall((void*)engineCallMethod, "prp",
+								(asCScriptEngine*)function->GetEngine(),
+								&arg1, func);
+						}
+					}
+					cpu.end_long_jump(dest);
+				}
 				pax = as<void*>(*esp + local::object1);
 				pdx = as<void*>(*esp + local::object2);
 				as<void*>(*pdx) = pax;
@@ -3835,7 +3851,7 @@ void SystemCall::call_64conv(asSSystemFunctionInterface* func,
 		if(sFunc->returnType.IsObjectHandle()) {
 			Register ret = as<void*>(cpu.intReturn64());
 			as<void*>(*ebp + offsetof(asSVMRegisters,objectRegister)) = ret;
-            as<void*>(*ebp + offsetof(asSVMRegisters,objectType)) = sFunc->returnType.GetTypeInfo();
+			as<void*>(*ebp + offsetof(asSVMRegisters,objectType)) = sFunc->returnType.GetTypeInfo();
 
 			//Add reference for returned auto handle
 			if(func->returnAutoHandle) {
@@ -3966,7 +3982,7 @@ void SystemCall::call_getReturn(asSSystemFunctionInterface* func, asCScriptFunct
 			}
 
 			as<void*>(*ebp + offsetof(asSVMRegisters,objectRegister)) = eax;
-            as<void*>(*ebp + offsetof(asSVMRegisters,objectType)) = sFunc->returnType.GetTypeInfo();
+			as<void*>(*ebp + offsetof(asSVMRegisters,objectType)) = sFunc->returnType.GetTypeInfo();
 
 			//Add reference for returned auto handle
 			if(func->returnAutoHandle) {
@@ -4023,7 +4039,7 @@ void SystemCall::call_getReturn(asSSystemFunctionInterface* func, asCScriptFunct
 			else {
 				//Store object pointer
 				as<void*>(*ebp + offsetof(asSVMRegisters,objectRegister)) = ecx;
-                as<void*>(*ebp + offsetof(asSVMRegisters,objectType)) = sFunc->returnType.GetTypeInfo();
+				as<void*>(*ebp + offsetof(asSVMRegisters,objectType)) = sFunc->returnType.GetTypeInfo();
 			}
 		}
 	}
