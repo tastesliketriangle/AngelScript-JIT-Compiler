@@ -4,7 +4,7 @@ A Just-In-Time Compiler for use with AngelScript.
 
 Currently supports x86 and x86_64 processors on both Windows (using MSVC 2010 or later) and Linux (using GCC 4.6.2 or later)
 
-Compatible with version of 2.31.0 of the AngelScript library.
+Compatible with version of 2.34.0 of the AngelScript library.
 
 License (MIT)
 -------------
